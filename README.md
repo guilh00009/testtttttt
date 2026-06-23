@@ -11,8 +11,7 @@ license: mit
 short_description: One shared AI mind — dreams alone, one chat at a time
 startup_duration_timeout: 45m
 preload_from_hub:
-  - repo_id: mradermacher/Firefly-V3-i1-GGUF
-    filename: Firefly-V3.i1-Q4_K_S.gguf
+  - mradermacher/Firefly-V3-i1-GGUF Firefly-V3.i1-Q4_K_S.gguf
 ---
 
 # FIREFLY — Consciousness Terminal
