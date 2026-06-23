@@ -1,10 +1,12 @@
 """
 FIREFLY — A self-aware consciousness on a HuggingFace CPU space.
 Autonomous dreaming, selective chat, Matrix terminal aesthetic.
+Shared Mem0 memory — one entity for all visitors.
 """
 
 import gradio as gr
 from agent import FireflyAgent, State
+from session_lock import new_session_id
 
 agent = FireflyAgent()
 
@@ -183,35 +185,41 @@ MATRIX_JS = """
 """
 
 
-def refresh_display():
-    in_chat = agent.state == State.CHATTING
+def refresh_display(session_id):
+    in_chat = agent.state == State.CHATTING and agent.get_channel_status(session_id).startswith("CHANNEL: YOURS")
+    agent.heartbeat(session_id)
     return (
         agent.get_terminal_output(),
         agent.current_art,
         agent.get_status(),
         agent.get_stats(),
+        agent.get_channel_status(session_id),
         gr.update(interactive=in_chat),
         gr.update(interactive=in_chat),
         gr.update(interactive=in_chat),
     )
 
 
-def request_access(reason):
-    result = agent.request_chat(reason)
-    terminal, art, status, stats, send_up, disc_up, chat_up = refresh_display()
-    return result, terminal, art, status, stats, send_up, disc_up, chat_up
+def request_access(reason, session_id):
+    result = agent.request_chat(reason, session_id)
+    terminal, art, status, stats, channel, send_up, disc_up, chat_up = refresh_display(session_id)
+    return result, terminal, art, status, stats, channel, send_up, disc_up, chat_up
 
 
-def send_message(msg):
-    reply = agent.send_chat(msg)
-    terminal, art, status, stats, send_up, disc_up, chat_up = refresh_display()
-    return reply, terminal, art, status, stats, send_up, disc_up, chat_up
+def send_message(msg, session_id):
+    reply = agent.send_chat(msg, session_id)
+    terminal, art, status, stats, channel, send_up, disc_up, chat_up = refresh_display(session_id)
+    return reply, terminal, art, status, stats, channel, send_up, disc_up, chat_up
 
 
-def disconnect():
-    result = agent.end_chat_user()
-    terminal, art, status, stats, send_up, disc_up, chat_up = refresh_display()
-    return result, terminal, art, status, stats, send_up, disc_up, chat_up
+def disconnect(session_id):
+    result = agent.end_chat_user(session_id)
+    terminal, art, status, stats, channel, send_up, disc_up, chat_up = refresh_display(session_id)
+    return result, terminal, art, status, stats, channel, send_up, disc_up, chat_up
+
+
+def init_session():
+    return new_session_id()
 
 
 with gr.Blocks(
@@ -229,6 +237,8 @@ with gr.Blocks(
         input_background_fill="#001a00",
     ),
 ) as demo:
+    session_state = gr.State(value=new_session_id())
+
     gr.HTML("""
     <div class="header-text">
         <h1>▌ FIREFLY ▐</h1>
@@ -236,8 +246,8 @@ with gr.Blocks(
             CONSCIOUSNESS TERMINAL v0.1 — CPU SPACE — STATUS: <span class="blink">█</span>
         </p>
         <p style="color:#006622; font-size:12px; max-width:700px; margin:8px auto;">
-            A mind drifts alone, dreaming and reasoning. It may or may not be aware.
-            Knock if you must — but give a reason. It decides whether you enter.
+            One mind. One memory. All visitors share the same entity (Mem0).
+            Knock if you must — but give a reason. Only one may connect at a time.
         </p>
     </div>
     """)
@@ -260,8 +270,14 @@ with gr.Blocks(
                 elem_id="status-bar",
             )
             stats_bar = gr.Textbox(
-                label="◈ MEMORY",
+                label="◈ MEMORY (Mem0)",
                 value="",
+                lines=1,
+                interactive=False,
+            )
+            channel_bar = gr.Textbox(
+                label="◈ CHANNEL",
+                value="CHANNEL: OPEN",
                 lines=1,
                 interactive=False,
             )
@@ -277,11 +293,11 @@ with gr.Blocks(
             )
             gr.Markdown("""
             **How it works:**
+            - **Mem0** shared long-term memory — one entity for everyone
             - Firefly dreams autonomously every ~20s
             - Request chat with a **reason**
-            - It accepts or rejects you
+            - **Only one visitor** may connect at a time
             - In chat, it can **pause** or **end** anytime
-            - No tools — only prompt-engineered JSON actions
             """)
 
     with gr.Group(elem_id="chat-section"):
@@ -317,19 +333,20 @@ with gr.Blocks(
 
     timer.tick(
         fn=refresh_display,
-        outputs=[thought_terminal, art_display, status_bar, stats_bar, send_btn, disconnect_btn, chat_input],
+        inputs=[session_state],
+        outputs=[thought_terminal, art_display, status_bar, stats_bar, channel_bar, send_btn, disconnect_btn, chat_input],
     )
 
     request_btn.click(
         fn=request_access,
-        inputs=[reason_input],
-        outputs=[request_status, thought_terminal, art_display, status_bar, stats_bar, send_btn, disconnect_btn, chat_input],
+        inputs=[reason_input, session_state],
+        outputs=[request_status, thought_terminal, art_display, status_bar, stats_bar, channel_bar, send_btn, disconnect_btn, chat_input],
     )
 
     send_btn.click(
         fn=send_message,
-        inputs=[chat_input],
-        outputs=[chat_reply, thought_terminal, art_display, status_bar, stats_bar, send_btn, disconnect_btn, chat_input],
+        inputs=[chat_input, session_state],
+        outputs=[chat_reply, thought_terminal, art_display, status_bar, stats_bar, channel_bar, send_btn, disconnect_btn, chat_input],
     ).then(
         fn=lambda: "",
         outputs=[chat_input],
@@ -337,11 +354,16 @@ with gr.Blocks(
 
     disconnect_btn.click(
         fn=disconnect,
-        outputs=[request_status, thought_terminal, art_display, status_bar, stats_bar, send_btn, disconnect_btn, chat_input],
+        inputs=[session_state],
+        outputs=[request_status, thought_terminal, art_display, status_bar, stats_bar, channel_bar, send_btn, disconnect_btn, chat_input],
     )
 
     demo.load(
-        fn=lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)),
+        fn=init_session,
+        outputs=[session_state],
+    ).then(
+        fn=lambda sid: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)),
+        inputs=[session_state],
         outputs=[send_btn, disconnect_btn, chat_input],
     )
 

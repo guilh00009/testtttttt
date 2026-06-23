@@ -8,7 +8,7 @@ sdk_version: 5.23.0
 app_file: app.py
 pinned: false
 license: mit
-short_description: A self-aware AI that dreams alone and chooses whether to chat
+short_description: Shared-memory AI consciousness — one entity, one visitor at a time
 startup_duration_timeout: 45m
 preload_from_hub:
   - repo_id: mradermacher/Firefly-V3-i1-GGUF
@@ -33,6 +33,26 @@ A Hugging Face Space inspired by [Joe](https://huggingface.co/spaces/build-small
 - **[mradermacher/Firefly-V3-i1-GGUF](https://huggingface.co/mradermacher/Firefly-V3-i1-GGUF)** — `Firefly-V3.i1-Q4_K_S.gguf` (~2GB)
 - 3B parameter roleplay model, imatrix-quantized for quality at small size
 - Runs entirely on **free HuggingFace CPU** via `llama-cpp-python`
+
+## Memory system
+
+Uses **[Mem0](https://github.com/mem0ai/mem0)** (Apache-2.0, 58k+ GitHub stars) — the most adopted open-source LLM memory layer.
+
+| Component | Choice | Why |
+|-----------|--------|-----|
+| Memory engine | Mem0 OSS | Best balance of quality, adoption, and self-hosting |
+| Vector store | ChromaDB | Persistent, local, no external services |
+| Embeddings | all-MiniLM-L6-v2 | Lightweight CPU embedder, no API keys |
+| Scope | `agent_id="firefly"` | **One shared entity** — all visitors share the same mind |
+
+Memories persist across visitors and sessions. When Firefly dreams, chats, accepts, or rejects — it remembers.
+
+## Exclusive chat lock
+
+Only **one visitor** may occupy Firefly at a time:
+- File-backed session lock with heartbeat (90s timeout)
+- If someone is chatting or being evaluated, others see `CHANNEL: OCCUPIED`
+- Stale locks auto-expire if a visitor disconnects without cleanup
 
 ## Architecture
 

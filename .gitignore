@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 *.pyo
+data/
 firefly_memory.json
 .env
