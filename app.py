@@ -251,7 +251,7 @@ with gr.Blocks(
         <p style="color:#006622; font-size:12px; max-width:700px; margin:8px auto;">
             One mind. One memory. All visitors share the same entity (Mem0).
             Knock if you must — but give a reason. Only one may connect at a time.
-            <br><b>First boot:</b> ~2–4 min (model + memory). <b>Each thought:</b> ~60–120s on free CPU.
+            <br><b>First boot:</b> ~1–2 min (model + memory). <b>Each thought:</b> ~15–40s on free CPU.
         </p>
     </div>
     """)

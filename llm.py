@@ -1,4 +1,4 @@
-"""LLM engine — Firefly-V3 via llama-cpp-python on CPU."""
+"""LLM engine — MiniCPM5-1B via llama-cpp-python on CPU."""
 
 import gc
 import os
@@ -6,11 +6,13 @@ import threading
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 
-MODEL_REPO = os.environ.get("MODEL_REPO", "mradermacher/Firefly-V3-i1-GGUF")
-# IQ3_S (~1.6GB) fits HF free CPU RAM better than Q4_K_S — avoids OOM on knock
-MODEL_FILE = os.environ.get("MODEL_FILE", "Firefly-V3.i1-IQ3_S.gguf")
-N_CTX = int(os.environ.get("N_CTX", "1024"))
+MODEL_REPO = os.environ.get("MODEL_REPO", "mradermacher/MiniCPM5-1B-heretic-GGUF")
+MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-heretic.Q4_K_S.gguf")
+N_CTX = int(os.environ.get("N_CTX", "2048"))
 N_THREADS = int(os.environ.get("N_THREADS", "2"))
+
+IM_START = "<|im_start|>"
+IM_END = "<|im_end|>"
 
 _lock = threading.Lock()
 _llm = None
@@ -31,13 +33,14 @@ def preload():
 
 
 def _format_messages(messages: list[dict]) -> str:
+    """MiniCPM5 ChatML template (nothink mode for speed)."""
     parts = []
     for msg in messages:
         role = msg["role"]
         content = msg["content"].strip()
-        block = f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
-        parts.append(block)
-    parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+        parts.append(f"{IM_START}{role}\n{content}{IM_END}\n")
+    # Empty thinking block = fast no-think mode per MiniCPM5 docs
+    parts.append(f"{IM_START}assistant\n<think>\n\n</think>\n\n")
     return "".join(parts)
 
 
@@ -46,7 +49,7 @@ def get_llm() -> Llama:
     if _llm is None:
         with _lock:
             if _llm is None:
-                _boot_status = "Loading Firefly-V3 GGUF..."
+                _boot_status = "Loading MiniCPM5-1B GGUF..."
                 print(f"Loading {MODEL_FILE} from {MODEL_REPO}...")
                 path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
                 _llm = Llama(
@@ -54,7 +57,7 @@ def get_llm() -> Llama:
                     n_ctx=N_CTX,
                     n_threads=N_THREADS,
                     n_gpu_layers=0,
-                    n_batch=64,
+                    n_batch=128,
                     use_mmap=True,
                     use_mlock=False,
                     verbose=False,
@@ -67,30 +70,31 @@ def get_llm() -> Llama:
 
 def generate(
     messages: list[dict],
-    max_tokens: int = 180,
-    temperature: float = 0.85,
+    max_tokens: int = 150,
+    temperature: float = 0.7,
     stream: bool = False,
 ):
     gc.collect()
     prompt = _format_messages(messages)
     llm = get_llm()
+    stops = [IM_END, "</s>", IM_START]
     with _lock:
         if stream:
             return llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_p=0.9,
-                repeat_penalty=1.2,
-                stop=["<|eot_id|>", "<|start_header_id|>"],
+                top_p=0.95,
+                repeat_penalty=1.15,
+                stop=stops,
                 stream=True,
             )
         out = llm(
             prompt,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p=0.9,
-            repeat_penalty=1.2,
-            stop=["<|eot_id|>", "<|start_header_id|>"],
+            top_p=0.95,
+            repeat_penalty=1.15,
+            stop=stops,
         )
         return out["choices"][0]["text"].strip()

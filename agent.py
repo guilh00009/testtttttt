@@ -151,7 +151,7 @@ class FireflyAgent:
             f"{mem_block}"
         )
 
-    def _run_inference(self, system: str, user: str, max_tokens: int = 180) -> dict:
+    def _run_inference(self, system: str, user: str, max_tokens: int = 150) -> dict:
         with self._infer_lock:
             self._inferring = True
             try:
@@ -160,7 +160,7 @@ class FireflyAgent:
                     {"role": "user", "content": user},
                 ]
                 start = time.time()
-                raw_text = generate(messages, max_tokens=max_tokens, temperature=0.9)
+                raw_text = generate(messages, max_tokens=max_tokens, temperature=0.7)
                 elapsed = int((time.time() - start) * 1000)
                 self.last_inference_ms = elapsed
                 parsed = extract_json(raw_text)
@@ -207,7 +207,7 @@ class FireflyAgent:
         if not req:
             return
         session_id = req.get("session_id")
-        self.status_message = "Evaluating your knock (~60-90s, please wait)..."
+        self.status_message = "Evaluating your knock (~15-40s, please wait)..."
         self._log("system", "Weighing whether to open the channel...")
         try:
             ctx = self._system_context(f"visitor reason: {req.get('reason', '')}")
@@ -290,10 +290,10 @@ class FireflyAgent:
                 "session_id": session_id,
             }
             self.state = State.EVALUATING
-            self._log("system", f"◈ INTRUSION DETECTED\nReason: \"{reason.strip()}\"\nEvaluating (~60-90s)...")
+            self._log("system", f"◈ INTRUSION DETECTED\nReason: \"{reason.strip()}\"\nEvaluating (~15-40s)...")
             self.status_message = "Evaluating knock — do not refresh..."
             self._wake.set()
-            return "REQUEST SENT — Firefly is deciding (~60-90s on CPU). Do not refresh."
+            return "REQUEST SENT — Firefly is deciding (~15-40s on CPU). Do not refresh."
 
     def send_chat(self, message: str, session_id: str) -> str:
         with self._lock:

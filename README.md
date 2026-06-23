@@ -11,7 +11,7 @@ license: mit
 short_description: One shared AI mind — dreams alone, one chat at a time
 startup_duration_timeout: 45m
 preload_from_hub:
-  - mradermacher/Firefly-V3-i1-GGUF Firefly-V3.i1-IQ3_S.gguf
+  - mradermacher/MiniCPM5-1B-heretic-GGUF MiniCPM5-1B-heretic.Q4_K_S.gguf
   - sentence-transformers/all-MiniLM-L6-v2
 ---
 
@@ -30,8 +30,8 @@ A Hugging Face Space inspired by [Joe](https://huggingface.co/spaces/build-small
 
 ## Model
 
-- **[mradermacher/Firefly-V3-i1-GGUF](https://huggingface.co/mradermacher/Firefly-V3-i1-GGUF)** — `Firefly-V3.i1-Q4_K_S.gguf` (~2GB)
-- 3B parameter roleplay model, imatrix-quantized for quality at small size
+- **[mradermacher/MiniCPM5-1B-heretic-GGUF](https://huggingface.co/mradermacher/MiniCPM5-1B-heretic-GGUF)** — `MiniCPM5-1B-heretic.Q4_K_S.gguf` (~0.8GB)
+- 1B parameter model — same family Joe uses; ~5–10× faster than 3B on CPU
 - Runs entirely on **free HuggingFace CPU** via `llama-cpp-python`
 
 ## Memory system
