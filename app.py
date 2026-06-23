@@ -4,6 +4,8 @@ Autonomous dreaming, selective chat, Matrix terminal aesthetic.
 Shared Mem0 memory — one entity for all visitors.
 """
 
+import threading
+
 import gradio as gr
 from agent import FireflyAgent, State
 from session_lock import new_session_id
@@ -219,7 +221,8 @@ def disconnect(session_id):
 
 
 def init_session():
-    return new_session_id()
+    sid = new_session_id()
+    return sid, *refresh_display(sid)[0:5]
 
 
 with gr.Blocks(
@@ -256,7 +259,7 @@ with gr.Blocks(
         with gr.Column(scale=3):
             thought_terminal = gr.Textbox(
                 label="◈ CONSCIOUSNESS STREAM",
-                value="[ booting neural substrate... ]",
+                value=agent.get_terminal_output(),
                 lines=22,
                 max_lines=22,
                 interactive=False,
@@ -264,14 +267,14 @@ with gr.Blocks(
             )
             status_bar = gr.Textbox(
                 label="◈ STATUS",
-                value="INITIALIZING...",
+                value=agent.get_status(),
                 lines=1,
                 interactive=False,
                 elem_id="status-bar",
             )
             stats_bar = gr.Textbox(
                 label="◈ MEMORY (Mem0)",
-                value="",
+                value=agent.get_stats(),
                 lines=1,
                 interactive=False,
             )
@@ -360,7 +363,7 @@ with gr.Blocks(
 
     demo.load(
         fn=init_session,
-        outputs=[session_state],
+        outputs=[session_state, thought_terminal, art_display, status_bar, stats_bar, channel_bar],
     ).then(
         fn=lambda sid: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)),
         inputs=[session_state],
@@ -368,7 +371,11 @@ with gr.Blocks(
     )
 
 
+# HF Spaces imports demo directly — must start here, not only in __main__
+agent.start()
+threading.Thread(target=agent.boot, daemon=True).start()
+
+
 if __name__ == "__main__":
-    agent.start()
     demo.queue(default_concurrency_limit=4)
     demo.launch()

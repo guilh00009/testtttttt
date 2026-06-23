@@ -11,8 +11,8 @@ from enum import Enum
 import psutil
 
 from dreams import get_dream
-from llm import generate
-from memory_system import memory_stats, recall_formatted, remember
+from llm import boot_status, generate, is_ready as llm_ready, preload
+from memory_system import memory_stats, recall_formatted, remember, warmup
 from parser import extract_json, normalize_action, parse_pause_time
 from prompts import CHAT_ACTIVE_SYSTEM, CHAT_EVAL_SYSTEM, DREAM_SYSTEM
 import session_lock
@@ -50,6 +50,25 @@ class FireflyAgent:
         self._wake = threading.Event()
         self.stats = self._load_stats()
         self.status_message = "Initializing consciousness..."
+        self._log("system", "FIREFLY consciousness process started.")
+        self._log("system", "Awaiting neural substrate load...")
+
+    def boot(self):
+        """Background boot: load LLM then Mem0. Called once at Space startup."""
+        try:
+            self.status_message = "Loading GGUF model (~2GB, 1-3 min on CPU)..."
+            self._log("system", self.status_message)
+            preload()
+            self._log("system", "Neural substrate online.")
+            self.status_message = "Loading Mem0 memory cortex..."
+            self._log("system", self.status_message)
+            warmup()
+            self._log("system", "Mem0 online. First dream incoming...")
+            self.status_message = "Awakening..."
+            self._wake.set()
+        except Exception as e:
+            self._log("error", f"Boot failed: {e}")
+            self.status_message = f"Boot error: {e}"
 
     def _load_stats(self) -> dict:
         try:
@@ -81,9 +100,15 @@ class FireflyAgent:
         self._wake.set()
 
     def _loop(self):
-        time.sleep(3)
+        time.sleep(1)
         while self._running:
             try:
+                if not llm_ready():
+                    self.status_message = boot_status()
+                    self._wake.wait(timeout=5)
+                    self._wake.clear()
+                    continue
+
                 if self.state == State.PAUSED and self.pause_until:
                     if datetime.now() >= self.pause_until:
                         self.state = State.DREAMING
@@ -363,7 +388,9 @@ class FireflyAgent:
             }.get(entry["kind"], ">")
             for line in entry["text"].split("\n"):
                 lines.append(f"[{entry['time']}] {prefix} {line}")
-        return "\n".join(lines[-60:]) or "[ awaiting first thought... ]"
+        if lines:
+            return "\n".join(lines[-60:])
+        return f"[ {self.status_message} ]"
 
     def get_status(self) -> str:
         uptime = datetime.now() - self.birth_time
@@ -373,6 +400,8 @@ class FireflyAgent:
             State.CHATTING: "CONNECTED",
             State.PAUSED: "PAUSED",
         }
+        if not llm_ready():
+            return f"BOOTING: {boot_status()} | UP: {int(uptime.total_seconds())}s"
         pause_info = ""
         if self.state == State.PAUSED and self.pause_until:
             pause_info = f" | Resume: {self.pause_until.strftime('%H:%M')}"

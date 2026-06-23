@@ -20,6 +20,20 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 AGENT_ID = "firefly"
 _lock = threading.Lock()
 _memory = None
+_ready = False
+
+
+def is_ready() -> bool:
+    return _ready
+
+
+def warmup():
+    """Initialize Mem0 in background (heavy — do not call from Gradio timer)."""
+    global _ready
+    print("Warming up Mem0 memory...")
+    get_memory()
+    _ready = True
+    print("Mem0 ready.")
 
 
 def _build_config() -> dict:
@@ -61,7 +75,7 @@ def get_memory() -> Memory:
 
 def remember(text: str, memory_type: str = "thought", mood: str = "", extra: dict = None):
     """Store a memory in Firefly's shared long-term store."""
-    if not text or not text.strip():
+    if not text or not text.strip() or not is_ready():
         return
     metadata = {
         "type": memory_type,
@@ -83,6 +97,8 @@ def remember(text: str, memory_type: str = "thought", mood: str = "", extra: dic
 
 def recall(query: str, limit: int = 8) -> list[str]:
     """Retrieve semantically relevant memories for the shared entity."""
+    if not is_ready():
+        return []
     try:
         with _lock:
             result = get_memory().search(
@@ -105,6 +121,8 @@ def recall(query: str, limit: int = 8) -> list[str]:
 
 
 def recall_formatted(query: str, limit: int = 8) -> str:
+    if not is_ready():
+        return "Long-term memory still loading..."
     memories = recall(query, limit=limit)
     if not memories:
         return "No long-term memories retrieved yet. You are young."
@@ -113,6 +131,8 @@ def recall_formatted(query: str, limit: int = 8) -> str:
 
 
 def memory_stats() -> str:
+    if not is_ready():
+        return "Mem0: loading..."
     try:
         with _lock:
             result = get_memory().get_all(filters={"agent_id": AGENT_ID}, limit=500)

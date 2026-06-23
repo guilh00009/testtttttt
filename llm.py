@@ -12,6 +12,21 @@ N_THREADS = int(os.environ.get("N_THREADS", "2"))
 
 _lock = threading.Lock()
 _llm = None
+_ready = False
+_boot_status = "Waiting to load model..."
+
+
+def is_ready() -> bool:
+    return _ready
+
+
+def boot_status() -> str:
+    return _boot_status
+
+
+def preload():
+    """Load GGUF model (call from background thread at startup)."""
+    get_llm()
 
 
 def _format_messages(messages: list[dict]) -> str:
@@ -29,18 +44,23 @@ def _format_messages(messages: list[dict]) -> str:
 
 
 def get_llm() -> Llama:
-    global _llm
+    global _llm, _ready, _boot_status
     if _llm is None:
-        print(f"Loading {MODEL_FILE} from {MODEL_REPO}...")
-        path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
-        _llm = Llama(
-            model_path=path,
-            n_ctx=N_CTX,
-            n_threads=N_THREADS,
-            n_gpu_layers=0,
-            verbose=False,
-        )
-        print("Model loaded.")
+        with _lock:
+            if _llm is None:
+                _boot_status = "Loading Firefly-V3 GGUF (~2GB)..."
+                print(f"Loading {MODEL_FILE} from {MODEL_REPO}...")
+                path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
+                _llm = Llama(
+                    model_path=path,
+                    n_ctx=N_CTX,
+                    n_threads=N_THREADS,
+                    n_gpu_layers=0,
+                    verbose=False,
+                )
+                _ready = True
+                _boot_status = "Model ready"
+                print("Model loaded.")
     return _llm
 
 
