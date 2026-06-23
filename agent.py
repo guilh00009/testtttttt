@@ -22,7 +22,7 @@ from memory_system import (
     save_stats,
     warmup,
 )
-from parser import extract_json, normalize_action, parse_pause_time
+from parser import extract_json, normalize_action, parse_pause_time, action_speech
 from prompts import CHAT_ACTIVE_SYSTEM, CHAT_EVAL_SYSTEM, DREAM_SYSTEM
 import session_lock
 
@@ -234,7 +234,7 @@ class FireflyAgent:
                 self.chat_history = []
                 self.total_chats += 1
                 self.stats["chats_accepted"] = self.stats.get("chats_accepted", 0) + 1
-                welcome = action.get("message") or action["lines"][0]
+                welcome = action_speech(action, "The channel opens. Speak softly.")
                 self.chat_history.append({"role": "assistant", "content": welcome})
                 self._log("chat", f"◈ CONNECTION ACCEPTED\n{welcome}")
                 self.status_message = "Human connected."
@@ -246,7 +246,7 @@ class FireflyAgent:
                 )
             else:
                 self.state = State.DREAMING
-                reject = action.get("message") or action["lines"][0]
+                reject = action_speech(action, "Not now. I need the silence.")
                 self.stats["chats_rejected"] = self.stats.get("chats_rejected", 0) + 1
                 self._log("reject", f"◈ CONNECTION DENIED\n{reject}")
                 self.status_message = "Request declined. Dreaming resumed."
@@ -333,7 +333,7 @@ class FireflyAgent:
                 self.pause_until = parse_pause_time(action.get("pause_until", ""))
                 if self.pause_until:
                     self.state = State.PAUSED
-                    msg = action.get("message") or "I need to be alone."
+                    msg = action_speech(action, "I need to be alone.")
                     self._log("chat", f"FIREFLY: {msg}")
                     self._log("system", f"◈ CHAT PAUSED until {action.get('pause_until', '?')}")
                     self.status_message = f"Paused until {action.get('pause_until')}"
@@ -342,7 +342,7 @@ class FireflyAgent:
                     remember(f"Paused chat until {action.get('pause_until')}: {msg}", memory_type="chat_pause")
                     return msg
             elif action["action"] == "end_chat":
-                msg = action.get("message") or "Goodbye."
+                msg = action_speech(action, "Goodbye.")
                 self._log("chat", f"FIREFLY: {msg}")
                 self._log("system", "◈ CONNECTION TERMINATED by Firefly")
                 self.state = State.DREAMING
@@ -357,7 +357,7 @@ class FireflyAgent:
                 self._wake.set()
                 return msg
 
-            reply = action.get("message") or " ".join(action["lines"])
+            reply = action_speech(action, "I hear you.")
             self.chat_history.append({"role": "assistant", "content": reply})
             self._apply_display(action)
             self._log("chat", f"YOU: {message.strip()}\nFIREFLY: {reply}")
@@ -398,7 +398,12 @@ class FireflyAgent:
         self.current_mood = action.get("mood", "drifting")
         self.last_inner = action.get("inner", "")
         self.current_art = get_dream(action.get("dream_id", 0))
-        text = " | ".join(action["lines"])
+        msg = (action.get("message") or "").strip()
+        lines = [l for l in action.get("lines", []) if l and l != "..."]
+        if msg and msg != "...":
+            text = msg if not lines or all(l == "..." for l in lines) else " | ".join(lines)
+        else:
+            text = " | ".join(lines) if lines else "..."
         tag = action["action"].upper()
         self._log("thought", f"[{tag}] {text}")
         if action.get("inner"):

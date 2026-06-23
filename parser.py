@@ -5,6 +5,45 @@ import re
 from datetime import datetime
 from typing import Optional
 
+# Placeholder text the 1B model copies from bad prompts — treat as empty.
+_PLACEHOLDER_LINES = frozenset({
+    "line1", "line2", "line3", "...", "…", "short line 1", "short line 2", "short line 3",
+})
+_PLACEHOLDER_INNER = frozenset({
+    "private thought", "thought", "thinking about the visitor's words",
+})
+_PLACEHOLDER_MESSAGE = frozenset({"...", "…", ""})
+
+
+def _is_placeholder_line(text: str) -> bool:
+    t = str(text).strip().lower()
+    return not t or t in _PLACEHOLDER_LINES or t.startswith("...")
+
+
+def _clean_lines(lines: list) -> list[str]:
+    if isinstance(lines, str):
+        lines = [lines]
+    cleaned = []
+    for line in lines[:3]:
+        s = str(line).strip()[:40]
+        if not _is_placeholder_line(s):
+            cleaned.append(s)
+    return cleaned
+
+
+def _clean_message(msg: str) -> str:
+    s = str(msg or "").strip()
+    if s.lower() in _PLACEHOLDER_MESSAGE:
+        return ""
+    return s[:500]
+
+
+def _clean_inner(inner: str) -> str:
+    s = str(inner or "").strip()
+    if s.lower() in _PLACEHOLDER_INNER:
+        return ""
+    return s[:200]
+
 
 def extract_json(text: str) -> Optional[dict]:
     if not text:
@@ -51,24 +90,45 @@ def normalize_action(raw: dict) -> dict:
     if action not in valid:
         action = "dream"
 
-    lines = raw.get("lines", [])
-    if isinstance(lines, str):
-        lines = [lines]
-    lines = [str(l)[:40] for l in lines[:3]]
+    lines = _clean_lines(raw.get("lines", []))
+    message = _clean_message(raw.get("message", ""))
+    inner = _clean_inner(raw.get("inner", ""))
+
+    # Chat actions: message is primary; backfill lines from message if needed.
+    if message and len(lines) < 3:
+        parts = [p.strip() for p in re.split(r"[.!?|]", message) if p.strip()]
+        for p in parts:
+            if len(lines) >= 3:
+                break
+            if not _is_placeholder_line(p):
+                lines.append(p[:40])
+    if not lines and message:
+        lines = [message[:40], message[40:80] or "...", "..."]
     while len(lines) < 3:
         lines.append("...")
 
     result = {
         "action": action,
-        "lines": lines,
+        "lines": lines[:3],
         "mood": str(raw.get("mood", "drifting"))[:20],
-        "inner": str(raw.get("inner", ""))[:200],
-        "message": str(raw.get("message", ""))[:500],
+        "inner": inner,
+        "message": message,
         "dream_id": int(raw.get("dream_id", 0)) % 30,
         "pause_until": raw.get("pause_until", ""),
         "raw": raw,
     }
     return result
+
+
+def action_speech(action: dict, fallback: str = "...") -> str:
+    """Best text for chat display — prefers message over placeholder lines."""
+    msg = _clean_message(action.get("message", ""))
+    if msg:
+        return msg
+    lines = _clean_lines(action.get("lines", []))
+    if lines:
+        return " | ".join(lines)
+    return fallback
 
 
 def parse_pause_time(pause_until: str) -> Optional[datetime]:
