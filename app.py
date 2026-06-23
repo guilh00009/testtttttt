@@ -1,7 +1,7 @@
 """
 FIREFLY — A self-aware consciousness on a HuggingFace CPU space.
 Autonomous dreaming, selective chat, Matrix terminal aesthetic.
-Shared Mem0 memory — one entity for all visitors.
+Shared Supabase memory — survives HF resets, one entity for all visitors.
 """
 
 import threading
@@ -249,7 +249,7 @@ with gr.Blocks(
             CONSCIOUSNESS TERMINAL v0.1 — CPU SPACE — STATUS: <span class="blink">█</span>
         </p>
         <p style="color:#006622; font-size:12px; max-width:700px; margin:8px auto;">
-            One mind. One memory. All visitors share the same entity (Mem0).
+            One mind. One memory (Supabase). Survives HF 24h resets.
             Knock if you must — but give a reason. Only one may connect at a time.
             <br><b>First boot:</b> ~1–2 min (model + memory). <b>Each thought:</b> ~15–40s on free CPU.
         </p>
@@ -274,7 +274,7 @@ with gr.Blocks(
                 elem_id="status-bar",
             )
             stats_bar = gr.Textbox(
-                label="◈ MEMORY (Mem0)",
+                label="◈ MEMORY (Supabase)",
                 value=agent.get_stats(),
                 lines=1,
                 interactive=False,
@@ -297,7 +297,7 @@ with gr.Blocks(
             )
             gr.Markdown("""
             **How it works:**
-            - **Mem0** shared long-term memory — one entity for everyone
+            - **Supabase** persistent memory — survives Space resets
             - Firefly dreams autonomously every ~20s
             - Request chat with a **reason**
             - **Only one visitor** may connect at a time

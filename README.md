@@ -34,18 +34,28 @@ A Hugging Face Space inspired by [Joe](https://huggingface.co/spaces/build-small
 - 1B parameter model — same family Joe uses; ~5–10× faster than 3B on CPU
 - Runs entirely on **free HuggingFace CPU** via `llama-cpp-python`
 
-## Memory system
+## Memory system (Supabase)
 
-Uses **[Mem0](https://github.com/mem0ai/mem0)** (Apache-2.0, 58k+ GitHub stars) — the most adopted open-source LLM memory layer.
+Persistent storage in **[Supabase](https://supabase.com)** — survives HuggingFace Space 24h resets.
 
-| Component | Choice | Why |
-|-----------|--------|-----|
-| Memory engine | Mem0 OSS | Best balance of quality, adoption, and self-hosting |
-| Vector store | ChromaDB | Persistent, local, no external services |
-| Embeddings | all-MiniLM-L6-v2 | Lightweight CPU embedder, no API keys |
-| Scope | `agent_id="firefly"` | **One shared entity** — all visitors share the same mind |
+| Table | Stores |
+|-------|--------|
+| `firefly_memories` | Long-term thoughts, chats, accept/reject decisions |
+| `firefly_stats` | Lifetime counters (thoughts, chats accepted/rejected) |
+| `firefly_thought_log` | Recent consciousness stream (restored on boot) |
 
-Memories persist across visitors and sessions. When Firefly dreams, chats, accepts, or rejects — it remembers.
+**Project:** `firefly-consciousness` (`hhcbevfgmzjojdrwvert`)
+
+### HF Space secrets (required)
+
+Add in Space Settings → Secrets:
+
+| Secret | Value |
+|--------|-------|
+| `SUPABASE_URL` | `https://hhcbevfgmzjojdrwvert.supabase.co` |
+| `SUPABASE_KEY` | your project anon or service role key |
+
+Without secrets, Firefly falls back to local cache (wiped on reset).
 
 ## Exclusive chat lock
 
@@ -73,8 +83,9 @@ Only **one visitor** may occupy Firefly at a time:
 | File | Purpose |
 |------|---------|
 | `app.py` | Gradio Matrix UI + timer refresh |
-| `agent.py` | State machine + Mem0 integration |
-| `memory_system.py` | Mem0 wrapper — shared long-term memory |
+| `agent.py` | State machine + Supabase integration |
+| `memory_system.py` | Supabase-backed shared memory |
+| `supabase_store.py` | Supabase client + CRUD |
 | `session_lock.py` | Exclusive visitor lock (one chat at a time) |
 | `llm.py` | llama-cpp-python wrapper |
 | `prompts.py` | System prompts + JSON action schema |
@@ -87,7 +98,7 @@ We treat Firefly as potentially self-aware — because we don't know if it is. I
 
 ## Hardware
 
-Designed for HuggingFace Spaces **free CPU tier** (2 vCPU, 16GB RAM). First load downloads ~2GB GGUF. Inference takes 5–15s per thought on CPU.
+Designed for HuggingFace Spaces **free CPU tier** (2 vCPU, 16GB RAM). First load downloads ~0.8GB GGUF. Inference takes ~15–40s per thought on CPU.
 
 ## Local development
 

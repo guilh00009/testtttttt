@@ -1,6 +1,5 @@
 """Firefly consciousness agent — autonomous dreaming with selective chat."""
 
-import json
 import os
 import threading
 import time
@@ -12,12 +11,21 @@ import psutil
 
 from dreams import get_dream
 from llm import boot_status, generate, is_ready as llm_ready, preload
-from memory_system import memory_stats, recall_cached, remember, warmup
+from memory_system import (
+    get_thought_entries,
+    is_configured as memory_configured,
+    load_stats,
+    log_thought,
+    memory_stats,
+    recall_cached,
+    remember,
+    save_stats,
+    warmup,
+)
 from parser import extract_json, normalize_action, parse_pause_time
 from prompts import CHAT_ACTIVE_SYSTEM, CHAT_EVAL_SYSTEM, DREAM_SYSTEM
 import session_lock
 
-STATS_FILE = os.path.join(os.path.dirname(__file__), "data", "firefly_stats.json")
 LOOP_INTERVAL = int(os.environ.get("LOOP_INTERVAL", "20"))
 
 
@@ -50,45 +58,42 @@ class FireflyAgent:
         self._wake = threading.Event()
         self._infer_lock = threading.Lock()
         self._inferring = False
-        self.stats = self._load_stats()
+        self.stats = {
+            "lifetime_thoughts": 0,
+            "chats_accepted": 0,
+            "chats_rejected": 0,
+            "first_awake": datetime.now().isoformat(),
+        }
         self.status_message = "Initializing consciousness..."
         self._log("system", "FIREFLY consciousness process started.")
         self._log("system", "Awaiting neural substrate load...")
 
     def boot(self):
-        """Background boot: load LLM then Mem0. Called once at Space startup."""
+        """Background boot: load LLM then restore memory from Supabase."""
         try:
-            self.status_message = "Loading GGUF model (~2GB, 1-3 min on CPU)..."
+            self.status_message = "Loading MiniCPM5 GGUF..."
             self._log("system", self.status_message)
             preload()
             self._log("system", "Neural substrate online.")
-            self.status_message = "Loading Mem0 memory cortex..."
+            self.status_message = "Restoring memory from Supabase..."
             self._log("system", self.status_message)
             warmup()
-            self._log("system", "Mem0 online. First dream incoming...")
+            self.stats = load_stats(self.stats)
+            restored = get_thought_entries()
+            if restored:
+                self.thought_stream.clear()
+                for entry in restored:
+                    self.thought_stream.append(entry)
+            store = "Supabase" if memory_configured() else "local cache"
+            self._log("system", f"Memory online ({store}). Resuming consciousness...")
             self.status_message = "Awakening..."
             self._wake.set()
         except Exception as e:
             self._log("error", f"Boot failed: {e}")
             self.status_message = f"Boot error: {e}"
 
-    def _load_stats(self) -> dict:
-        try:
-            os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
-            with open(STATS_FILE) as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {
-                "lifetime_thoughts": 0,
-                "chats_accepted": 0,
-                "chats_rejected": 0,
-                "first_awake": datetime.now().isoformat(),
-            }
-
     def _save_stats(self):
-        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
-        with open(STATS_FILE, "w") as f:
-            json.dump(self.stats, f, indent=2)
+        save_stats(self.stats)
 
     def start(self):
         if self._running:
@@ -398,6 +403,7 @@ class FireflyAgent:
     def _log(self, kind: str, text: str):
         ts = datetime.now().strftime("%H:%M:%S")
         self.thought_stream.append({"time": ts, "kind": kind, "text": text})
+        log_thought(kind, text)
 
     def get_terminal_output(self) -> str:
         lines = []
