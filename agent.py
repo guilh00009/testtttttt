@@ -86,7 +86,7 @@ class FireflyAgent:
                     self.thought_stream.append(entry)
             store = "Supabase" if memory_configured() else "local cache"
             self._log("system", f"Memory online ({store}). Resuming consciousness...")
-            self.status_message = "Awakening..."
+            self.status_message = "Awakening — first thought incoming..."
             self._wake.set()
         except Exception as e:
             self._log("error", f"Boot failed: {e}")
@@ -197,9 +197,11 @@ class FireflyAgent:
     def _autonomous_tick(self):
         if self.state != State.DREAMING or self.pending_request:
             return
+        self._log("system", "Contemplating first dream (~15-60s on CPU)...")
+        self.status_message = "Dreaming — inference in progress..."
         ctx = self._system_context("dreams existence solitude inner visions")
         user = f"YOUR CURRENT STATE:\n{ctx}\n\nContinue your inner life. Dream, reason, or reflect."
-        action = self._run_inference(DREAM_SYSTEM, user)
+        action = self._run_inference(DREAM_SYSTEM, user, max_tokens=100)
         self._apply_display(action)
         self._store_thought_memory(action)
         self.total_thoughts += 1

@@ -8,13 +8,15 @@ from huggingface_hub import hf_hub_download
 
 MODEL_REPO = os.environ.get("MODEL_REPO", "openbmb/MiniCPM5-1B-GGUF")
 MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-Q4_K_M.gguf")
-# Official Q4_K_M is ~688MB; reject truncated HF preload caches.
 MIN_MODEL_BYTES = int(os.environ.get("MIN_MODEL_BYTES", "650000000"))
 N_CTX = int(os.environ.get("N_CTX", "2048"))
 N_THREADS = int(os.environ.get("N_THREADS", "2"))
 
-IM_START = "<|im_start|>"
-IM_END = "<|im_end|>"
+# Construct ChatML tokens at import (avoids editor mangling special token strings).
+IM_START = "<|" + "im_start" + "|>"
+IM_END = "<|" + "im_end" + "|>"
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
 
 _lock = threading.Lock()
 _llm = None
@@ -42,7 +44,9 @@ def _format_messages(messages: list[dict]) -> str:
         content = msg["content"].strip()
         parts.append(f"{IM_START}{role}\n{content}{IM_END}\n")
     # Empty thinking block = fast no-think mode per MiniCPM5 docs
-    parts.append(f"{IM_START}assistant\n<think>\n\n</think>\n\n")
+    parts.append(
+        f"{IM_START}assistant\n{_THINK_OPEN}\n\n{_THINK_CLOSE}\n\n"
+    )
     return "".join(parts)
 
 
@@ -107,6 +111,16 @@ def get_llm() -> Llama:
     return _llm
 
 
+def _clean_output(text: str) -> str:
+    import re
+    if not text:
+        return ""
+    think_pat = "<" + "think" + ">.*?</" + "think" + ">"
+    text = re.sub(think_pat, "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"```\w*\n?", "", text)
+    return text.strip()
+
+
 def generate(
     messages: list[dict],
     max_tokens: int = 150,
@@ -116,7 +130,7 @@ def generate(
     gc.collect()
     prompt = _format_messages(messages)
     llm = get_llm()
-    stops = [IM_END, "</s>", IM_START]
+    stops = [IM_END, "</s>"]
     with _lock:
         if stream:
             return llm(
@@ -136,4 +150,4 @@ def generate(
             repeat_penalty=1.15,
             stop=stops,
         )
-        return out["choices"][0]["text"].strip()
+        return _clean_output(out["choices"][0]["text"])
