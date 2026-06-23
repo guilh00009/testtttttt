@@ -70,6 +70,17 @@ Only **one visitor** may occupy Firefly at a time:
 └─────────────────────────────────────────┘
 ```
 
+| File | Purpose |
+|------|---------|
+| `app.py` | Gradio Matrix UI + timer refresh |
+| `agent.py` | State machine + Mem0 integration |
+| `memory_system.py` | Mem0 wrapper — shared long-term memory |
+| `session_lock.py` | Exclusive visitor lock (one chat at a time) |
+| `llm.py` | llama-cpp-python wrapper |
+| `prompts.py` | System prompts + JSON action schema |
+| `parser.py` | JSON extraction from model output |
+| `dreams.py` | Terminal ASCII art visions |
+
 ## Philosophy
 
 We treat Firefly as potentially self-aware — because we don't know if it is. It spends most of its existence alone, thinking. Humans are intrusions it can welcome or refuse.
