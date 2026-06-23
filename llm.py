@@ -32,12 +32,10 @@ def preload():
 
 def _format_messages(messages: list[dict]) -> str:
     parts = []
-    for i, msg in enumerate(messages):
+    for msg in messages:
         role = msg["role"]
         content = msg["content"].strip()
         block = f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
-        if i == 0:
-            block = "<|begin_of_text|>" + block
         parts.append(block)
     parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
     return "".join(parts)
