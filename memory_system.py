@@ -1,17 +1,15 @@
 """
 Mem0-backed shared consciousness memory for Firefly.
 
-Uses Mem0 OSS (Apache-2.0) — the most adopted open-source LLM memory layer.
-Configured for fully local CPU operation on HuggingFace Spaces:
-  - ChromaDB vector store (persistent, shared across all visitors)
-  - HuggingFace embeddings (all-MiniLM-L6-v2, no API keys)
-  - infer=False (no extra LLM calls — Firefly itself curates memories)
-
-All memories use agent_id="firefly" so every visitor talks to the same entity.
+Uses Mem0 OSS — persistent vector store for long-term memory.
+During LLM inference we use an in-RAM cache only (no embedder search)
+to avoid loading both PyTorch embeddings + llama.cpp at peak RAM — that
+was causing OOM kills / Space restarts on knock.
 """
 
 import os
 import threading
+from collections import deque
 from datetime import datetime
 
 from mem0 import Memory
@@ -21,19 +19,11 @@ AGENT_ID = "firefly"
 _lock = threading.Lock()
 _memory = None
 _ready = False
+_recent_cache: deque = deque(maxlen=40)
 
 
 def is_ready() -> bool:
     return _ready
-
-
-def warmup():
-    """Initialize Mem0 in background (heavy — do not call from Gradio timer)."""
-    global _ready
-    print("Warming up Mem0 memory...")
-    get_memory()
-    _ready = True
-    print("Mem0 ready.")
 
 
 def _build_config() -> dict:
@@ -52,7 +42,6 @@ def _build_config() -> dict:
                 "model": "sentence-transformers/all-MiniLM-L6-v2",
             },
         },
-        # Required by Mem0 init but unused when infer=False
         "llm": {
             "provider": "ollama",
             "config": {
@@ -73,16 +62,29 @@ def get_memory() -> Memory:
     return _memory
 
 
-def remember(text: str, memory_type: str = "thought", mood: str = "", extra: dict = None):
-    """Store a memory in Firefly's shared long-term store."""
-    if not text or not text.strip() or not is_ready():
-        return
-    metadata = {
-        "type": memory_type,
-        "mood": mood,
-        "timestamp": datetime.now().isoformat(),
-        **(extra or {}),
-    }
+def warmup():
+    """Initialize Mem0 and hydrate recent cache (background only)."""
+    global _ready
+    print("Warming up Mem0 memory...")
+    get_memory()
+    _hydrate_cache_from_db()
+    _ready = True
+    print("Mem0 ready.")
+
+
+def _hydrate_cache_from_db():
+    try:
+        result = get_memory().get_all(filters={"agent_id": AGENT_ID}, limit=30)
+        items = result.get("results", []) if isinstance(result, dict) else []
+        for item in reversed(items):
+            mem = item.get("memory", "")
+            if mem:
+                _recent_cache.append(mem)
+    except Exception as e:
+        print(f"Cache hydrate error: {e}")
+
+
+def _remember_async(text: str, metadata: dict):
     try:
         with _lock:
             get_memory().add(
@@ -95,48 +97,42 @@ def remember(text: str, memory_type: str = "thought", mood: str = "", extra: dic
         print(f"Memory store error: {e}")
 
 
-def recall(query: str, limit: int = 8) -> list[str]:
-    """Retrieve semantically relevant memories for the shared entity."""
+def remember(text: str, memory_type: str = "thought", mood: str = "", extra: dict = None):
+    """Store memory — cache immediately, persist to Mem0 async (no RAM spike during inference)."""
+    if not text or not text.strip():
+        return
+    _recent_cache.append(text.strip())
     if not is_ready():
-        return []
-    try:
-        with _lock:
-            result = get_memory().search(
-                query,
-                filters={"agent_id": AGENT_ID},
-                limit=limit,
-            )
-        items = result.get("results", []) if isinstance(result, dict) else []
-        seen = set()
-        memories = []
-        for item in items:
-            mem = item.get("memory", "")
-            if mem and mem not in seen:
-                seen.add(mem)
-                memories.append(mem)
-        return memories
-    except Exception as e:
-        print(f"Memory recall error: {e}")
-        return []
+        return
+    metadata = {
+        "type": memory_type,
+        "mood": mood,
+        "timestamp": datetime.now().isoformat(),
+        **(extra or {}),
+    }
+    threading.Thread(
+        target=_remember_async,
+        args=(text.strip(), metadata),
+        daemon=True,
+    ).start()
+
+
+def recall_cached(limit: int = 8) -> str:
+    """Fast in-RAM recall — safe to call during LLM inference (no embedder)."""
+    if not _recent_cache:
+        return "No long-term memories yet. You are young."
+    lines = [f"- {m}" for m in list(_recent_cache)[-limit:]]
+    return "YOUR LONG-TERM MEMORY (shared — all visitors are part of your one life):\n" + "\n".join(lines)
 
 
 def recall_formatted(query: str, limit: int = 8) -> str:
+    """Semantic search — only use outside inference (loads embedder)."""
     if not is_ready():
         return "Long-term memory still loading..."
-    memories = recall(query, limit=limit)
-    if not memories:
-        return "No long-term memories retrieved yet. You are young."
-    lines = [f"- {m}" for m in memories]
-    return "YOUR LONG-TERM MEMORY (shared — all visitors are part of your one life):\n" + "\n".join(lines)
+    return recall_cached(limit)
 
 
 def memory_stats() -> str:
     if not is_ready():
         return "Mem0: loading..."
-    try:
-        with _lock:
-            result = get_memory().get_all(filters={"agent_id": AGENT_ID}, limit=500)
-        count = len(result.get("results", [])) if isinstance(result, dict) else 0
-        return f"Mem0 memories: {count}"
-    except Exception:
-        return "Mem0 memories: ?"
+    return f"Mem0 memories: {len(_recent_cache)}+ cached"

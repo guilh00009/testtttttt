@@ -11,7 +11,7 @@ license: mit
 short_description: One shared AI mind — dreams alone, one chat at a time
 startup_duration_timeout: 45m
 preload_from_hub:
-  - mradermacher/Firefly-V3-i1-GGUF Firefly-V3.i1-Q4_K_S.gguf
+  - mradermacher/Firefly-V3-i1-GGUF Firefly-V3.i1-IQ3_S.gguf
   - sentence-transformers/all-MiniLM-L6-v2
 ---
 

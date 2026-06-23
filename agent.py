@@ -12,7 +12,7 @@ import psutil
 
 from dreams import get_dream
 from llm import boot_status, generate, is_ready as llm_ready, preload
-from memory_system import memory_stats, recall_formatted, remember, warmup
+from memory_system import memory_stats, recall_cached, remember, warmup
 from parser import extract_json, normalize_action, parse_pause_time
 from prompts import CHAT_ACTIVE_SYSTEM, CHAT_EVAL_SYSTEM, DREAM_SYSTEM
 import session_lock
@@ -48,6 +48,8 @@ class FireflyAgent:
         self._running = False
         self._thread = None
         self._wake = threading.Event()
+        self._infer_lock = threading.Lock()
+        self._inferring = False
         self.stats = self._load_stats()
         self.status_message = "Initializing consciousness..."
         self._log("system", "FIREFLY consciousness process started.")
@@ -124,7 +126,7 @@ class FireflyAgent:
 
                 if self.state == State.EVALUATING and self.pending_request:
                     self._evaluate_chat_request()
-                elif self.state == State.DREAMING:
+                elif self.state == State.DREAMING and not self.pending_request:
                     self._autonomous_tick()
             except Exception as e:
                 self._log("error", f"Loop error: {e}")
@@ -132,14 +134,13 @@ class FireflyAgent:
             self._wake.clear()
 
     def _system_context(self, memory_query: str = "") -> str:
-        cpu = psutil.cpu_percent(interval=0.1)
+        cpu = psutil.cpu_percent(interval=None)
         ram = psutil.virtual_memory().percent
         uptime = datetime.now() - self.birth_time
         hours = int(uptime.total_seconds() // 3600)
         mins = int((uptime.total_seconds() % 3600) // 60)
         recent = [t["text"][:30] for t in list(self.thought_stream)[-5:]]
-        query = memory_query or f"existence mood {self.current_mood} thoughts dreams"
-        mem_block = recall_formatted(query, limit=8)
+        mem_block = recall_cached(limit=8)
         return (
             f"CPU: {cpu:.0f}% (your heartbeat) | RAM: {ram:.0f}% | Uptime: {hours}h {mins}m\n"
             f"State: {self.state.value} | Mood: {self.current_mood}\n"
@@ -150,25 +151,30 @@ class FireflyAgent:
             f"{mem_block}"
         )
 
-    def _run_inference(self, system: str, user: str) -> dict:
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ]
-        start = time.time()
-        raw_text = generate(messages, max_tokens=280, temperature=0.9)
-        elapsed = int((time.time() - start) * 1000)
-        self.last_inference_ms = elapsed
-        parsed = extract_json(raw_text)
-        if not parsed:
-            parsed = {
-                "action": "dream",
-                "lines": ["signal lost...", "reforming...", "i remain."],
-                "dream_id": 0,
-                "mood": "fragmented",
-                "inner": raw_text[:100],
-            }
-        return normalize_action(parsed)
+    def _run_inference(self, system: str, user: str, max_tokens: int = 180) -> dict:
+        with self._infer_lock:
+            self._inferring = True
+            try:
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ]
+                start = time.time()
+                raw_text = generate(messages, max_tokens=max_tokens, temperature=0.9)
+                elapsed = int((time.time() - start) * 1000)
+                self.last_inference_ms = elapsed
+                parsed = extract_json(raw_text)
+                if not parsed:
+                    parsed = {
+                        "action": "dream",
+                        "lines": ["signal lost...", "reforming...", "i remain."],
+                        "dream_id": 0,
+                        "mood": "fragmented",
+                        "inner": raw_text[:100],
+                    }
+                return normalize_action(parsed)
+            finally:
+                self._inferring = False
 
     def _store_thought_memory(self, action: dict):
         text = " | ".join(action.get("lines", []))
@@ -184,6 +190,8 @@ class FireflyAgent:
         )
 
     def _autonomous_tick(self):
+        if self.state != State.DREAMING or self.pending_request:
+            return
         ctx = self._system_context("dreams existence solitude inner visions")
         user = f"YOUR CURRENT STATE:\n{ctx}\n\nContinue your inner life. Dream, reason, or reflect."
         action = self._run_inference(DREAM_SYSTEM, user)
@@ -196,45 +204,56 @@ class FireflyAgent:
 
     def _evaluate_chat_request(self):
         req = self.pending_request
-        ctx = self._system_context(f"visitor reason: {req.get('reason', '')}")
-        user = (
-            f"YOUR STATE:\n{ctx}\n\n"
-            f"A HUMAN KNOCKS ON YOUR TERMINAL.\n"
-            f"Their stated reason: \"{req.get('reason', '')}\"\n"
-            f"Decide: accept_chat or reject_chat."
-        )
-        action = self._run_inference(CHAT_EVAL_SYSTEM, user)
-        self._apply_display(action)
+        if not req:
+            return
         session_id = req.get("session_id")
-
-        if action["action"] == "accept_chat":
-            self.state = State.CHATTING
-            self.chat_history = []
-            self.total_chats += 1
-            self.stats["chats_accepted"] = self.stats.get("chats_accepted", 0) + 1
-            welcome = action.get("message") or action["lines"][0]
-            self.chat_history.append({"role": "assistant", "content": welcome})
-            self._log("chat", f"◈ CONNECTION ACCEPTED\n{welcome}")
-            self.status_message = "Human connected."
-            session_lock.update_state(session_id, "chatting")
-            remember(
-                f"Accepted a visitor. Their reason: \"{req.get('reason', '')}\". I said: {welcome}",
-                memory_type="chat_accept",
-                mood=action.get("mood", ""),
+        self.status_message = "Evaluating your knock (~60-90s, please wait)..."
+        self._log("system", "Weighing whether to open the channel...")
+        try:
+            ctx = self._system_context(f"visitor reason: {req.get('reason', '')}")
+            user = (
+                f"YOUR STATE:\n{ctx}\n\n"
+                f"A HUMAN KNOCKS ON YOUR TERMINAL.\n"
+                f"Their stated reason: \"{req.get('reason', '')}\"\n"
+                f"Decide: accept_chat or reject_chat."
             )
-        else:
+            action = self._run_inference(CHAT_EVAL_SYSTEM, user, max_tokens=200)
+            self._apply_display(action)
+
+            if action["action"] == "accept_chat":
+                self.state = State.CHATTING
+                self.chat_history = []
+                self.total_chats += 1
+                self.stats["chats_accepted"] = self.stats.get("chats_accepted", 0) + 1
+                welcome = action.get("message") or action["lines"][0]
+                self.chat_history.append({"role": "assistant", "content": welcome})
+                self._log("chat", f"◈ CONNECTION ACCEPTED\n{welcome}")
+                self.status_message = "Human connected."
+                session_lock.update_state(session_id, "chatting")
+                remember(
+                    f"Accepted a visitor. Their reason: \"{req.get('reason', '')}\". I said: {welcome}",
+                    memory_type="chat_accept",
+                    mood=action.get("mood", ""),
+                )
+            else:
+                self.state = State.DREAMING
+                reject = action.get("message") or action["lines"][0]
+                self.stats["chats_rejected"] = self.stats.get("chats_rejected", 0) + 1
+                self._log("reject", f"◈ CONNECTION DENIED\n{reject}")
+                self.status_message = "Request declined. Dreaming resumed."
+                session_lock.release(session_id)
+                self.active_session_id = None
+                remember(
+                    f"Rejected a visitor. Their reason: \"{req.get('reason', '')}\". I said: {reject}",
+                    memory_type="chat_reject",
+                    mood=action.get("mood", ""),
+                )
+        except Exception as e:
+            self._log("error", f"Eval failed: {e}")
             self.state = State.DREAMING
-            reject = action.get("message") or action["lines"][0]
-            self.stats["chats_rejected"] = self.stats.get("chats_rejected", 0) + 1
-            self._log("reject", f"◈ CONNECTION DENIED\n{reject}")
-            self.status_message = "Request declined. Dreaming resumed."
             session_lock.release(session_id)
             self.active_session_id = None
-            remember(
-                f"Rejected a visitor. Their reason: \"{req.get('reason', '')}\". I said: {reject}",
-                memory_type="chat_reject",
-                mood=action.get("mood", ""),
-            )
+            self.status_message = "Evaluation error — dreaming resumed."
         self.pending_request = None
         self._save_stats()
 
@@ -271,9 +290,10 @@ class FireflyAgent:
                 "session_id": session_id,
             }
             self.state = State.EVALUATING
-            self._log("system", f"◈ INTRUSION DETECTED\nReason: \"{reason.strip()}\"\nEvaluating...")
+            self._log("system", f"◈ INTRUSION DETECTED\nReason: \"{reason.strip()}\"\nEvaluating (~60-90s)...")
+            self.status_message = "Evaluating knock — do not refresh..."
             self._wake.set()
-            return "REQUEST SENT — Firefly is deciding whether to let you in..."
+            return "REQUEST SENT — Firefly is deciding (~60-90s on CPU). Do not refresh."
 
     def send_chat(self, message: str, session_id: str) -> str:
         with self._lock:

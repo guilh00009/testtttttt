@@ -375,6 +375,7 @@ with gr.Blocks(
 # HF Spaces imports demo directly — must start here, not only in __main__
 agent.start()
 threading.Thread(target=agent.boot, daemon=True).start()
+demo.queue(default_concurrency_limit=16)
 
 
 if __name__ == "__main__":
