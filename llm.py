@@ -6,8 +6,8 @@ import threading
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 
-MODEL_REPO = os.environ.get("MODEL_REPO", "openbmb/MiniCPM5-1B-GGUF")
-MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-Q4_K_M.gguf")
+MODEL_REPO = os.environ.get("MODEL_REPO", "mradermacher/MiniCPM5-1B-heretic-GGUF")
+MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-heretic.Q4_K_M.gguf")
 MIN_MODEL_BYTES = int(os.environ.get("MIN_MODEL_BYTES", "650000000"))
 N_CTX = int(os.environ.get("N_CTX", "2048"))
 N_THREADS = int(os.environ.get("N_THREADS", "2"))

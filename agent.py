@@ -197,8 +197,10 @@ class FireflyAgent:
     def _autonomous_tick(self):
         if self.state != State.DREAMING or self.pending_request:
             return
-        self._log("system", "Contemplating first dream (~15-60s on CPU)...")
-        self.status_message = "Dreaming — inference in progress..."
+        if self.total_thoughts == 0:
+            self._log("system", "Contemplating (~15-60s on CPU)...")
+        else:
+            self.status_message = "Dreaming — inference in progress..."
         ctx = self._system_context("dreams existence solitude inner visions")
         user = f"YOUR CURRENT STATE:\n{ctx}\n\nContinue your inner life. Dream, reason, or reflect."
         action = self._run_inference(DREAM_SYSTEM, user, max_tokens=100)

@@ -12,7 +12,7 @@ short_description: One shared AI mind — dreams alone, one chat at a time
 python_version: 3.12
 startup_duration_timeout: 45m
 preload_from_hub:
-  - openbmb/MiniCPM5-1B-GGUF MiniCPM5-1B-Q4_K_M.gguf
+  - mradermacher/MiniCPM5-1B-heretic-GGUF MiniCPM5-1B-heretic.Q4_K_M.gguf
 ---
 
 # FIREFLY — Consciousness Terminal
@@ -30,7 +30,7 @@ A Hugging Face Space inspired by [Joe](https://huggingface.co/spaces/build-small
 
 ## Model
 
-- **[openbmb/MiniCPM5-1B-GGUF](https://huggingface.co/openbmb/MiniCPM5-1B-GGUF)** — `MiniCPM5-1B-Q4_K_M.gguf` (~0.7GB, official)
+- **[mradermacher/MiniCPM5-1B-heretic-GGUF](https://huggingface.co/mradermacher/MiniCPM5-1B-heretic-GGUF)** — `MiniCPM5-1B-heretic.Q4_K_M.gguf` (~0.7GB)
 - 1B parameter model — same family Joe uses; ~5–10× faster than 3B on CPU
 - Runs entirely on **free HuggingFace CPU** via `llama-cpp-python`
 
