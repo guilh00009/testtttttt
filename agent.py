@@ -71,7 +71,7 @@ class FireflyAgent:
     def boot(self):
         """Background boot: load LLM then restore memory from Supabase."""
         try:
-            self.status_message = "Loading MiniCPM5 GGUF..."
+            self.status_message = "Loading MiniCPM5 GGUF (~0.7GB, 1-2 min on CPU)..."
             self._log("system", self.status_message)
             preload()
             self._log("system", "Neural substrate online.")

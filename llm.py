@@ -6,8 +6,10 @@ import threading
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
 
-MODEL_REPO = os.environ.get("MODEL_REPO", "mradermacher/MiniCPM5-1B-heretic-GGUF")
-MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-heretic.Q4_K_S.gguf")
+MODEL_REPO = os.environ.get("MODEL_REPO", "openbmb/MiniCPM5-1B-GGUF")
+MODEL_FILE = os.environ.get("MODEL_FILE", "MiniCPM5-1B-Q4_K_M.gguf")
+# Official Q4_K_M is ~688MB; reject truncated HF preload caches.
+MIN_MODEL_BYTES = int(os.environ.get("MIN_MODEL_BYTES", "650000000"))
 N_CTX = int(os.environ.get("N_CTX", "2048"))
 N_THREADS = int(os.environ.get("N_THREADS", "2"))
 
@@ -44,27 +46,64 @@ def _format_messages(messages: list[dict]) -> str:
     return "".join(parts)
 
 
+def _model_path(force_download: bool = False) -> str:
+    path = hf_hub_download(
+        repo_id=MODEL_REPO,
+        filename=MODEL_FILE,
+        force_download=force_download,
+    )
+    size = os.path.getsize(path)
+    if size < MIN_MODEL_BYTES:
+        print(f"Model file looks truncated ({size} bytes); re-downloading...")
+        path = hf_hub_download(
+            repo_id=MODEL_REPO,
+            filename=MODEL_FILE,
+            force_download=True,
+        )
+    return path
+
+
+def _load_llama(path: str) -> Llama:
+    return Llama(
+        model_path=path,
+        n_ctx=N_CTX,
+        n_threads=N_THREADS,
+        n_gpu_layers=0,
+        n_batch=128,
+        use_mmap=True,
+        use_mlock=False,
+        verbose=False,
+    )
+
+
 def get_llm() -> Llama:
     global _llm, _ready, _boot_status
     if _llm is None:
         with _lock:
             if _llm is None:
-                _boot_status = "Loading MiniCPM5-1B GGUF..."
+                _boot_status = f"Loading {MODEL_FILE} (~0.7GB)..."
                 print(f"Loading {MODEL_FILE} from {MODEL_REPO}...")
-                path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
-                _llm = Llama(
-                    model_path=path,
-                    n_ctx=N_CTX,
-                    n_threads=N_THREADS,
-                    n_gpu_layers=0,
-                    n_batch=128,
-                    use_mmap=True,
-                    use_mlock=False,
-                    verbose=False,
-                )
-                _ready = True
-                _boot_status = "Model ready"
-                print("Model loaded.")
+                last_err = None
+                for attempt in range(2):
+                    try:
+                        path = _model_path(force_download=(attempt > 0))
+                        size_mb = os.path.getsize(path) / (1024 * 1024)
+                        print(f"GGUF path: {path} ({size_mb:.0f} MB)")
+                        _llm = _load_llama(path)
+                        _ready = True
+                        _boot_status = "Model ready"
+                        print("Model loaded.")
+                        break
+                    except Exception as e:
+                        last_err = e
+                        print(f"Model load attempt {attempt + 1} failed: {e}")
+                        _llm = None
+                        _ready = False
+                if _llm is None:
+                    _boot_status = f"Model load failed: {last_err}"
+                    raise RuntimeError(
+                        f"Failed to load model from {MODEL_REPO}/{MODEL_FILE}: {last_err}"
+                    )
     return _llm
 
 
