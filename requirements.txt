@@ -1,5 +1,5 @@
---extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python==0.3.31
+# Prebuilt manylinux wheel — avoids HF build timeout from source compile
+llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.30/llama_cpp_python-0.3.30-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
 gradio==5.23.0
 huggingface_hub>=0.25.0
 psutil>=5.9.0

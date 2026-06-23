@@ -9,6 +9,7 @@ app_file: app.py
 pinned: false
 license: mit
 short_description: One shared AI mind — dreams alone, one chat at a time
+python_version: 3.12
 startup_duration_timeout: 45m
 preload_from_hub:
   - openbmb/MiniCPM5-1B-GGUF MiniCPM5-1B-Q4_K_M.gguf
