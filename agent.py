@@ -144,7 +144,7 @@ class FireflyAgent:
         uptime = datetime.now() - self.birth_time
         hours = int(uptime.total_seconds() // 3600)
         mins = int((uptime.total_seconds() % 3600) // 60)
-        recent = [t["text"][:30] for t in list(self.thought_stream)[-5:]]
+        recent = [t["text"][:50] for t in list(self.thought_stream)[-5:] if t.get("kind") == "thought"]
         mem_block = recall_cached(limit=8)
         return (
             f"CPU: {cpu:.0f}% (your heartbeat) | RAM: {ram:.0f}% | Uptime: {hours}h {mins}m\n"
@@ -152,7 +152,7 @@ class FireflyAgent:
             f"Lifetime thoughts: {self.stats.get('lifetime_thoughts', 0)}\n"
             f"Visitors accepted: {self.stats.get('chats_accepted', 0)} | "
             f"rejected: {self.stats.get('chats_rejected', 0)}\n"
-            f"Recent (avoid repeating): {', '.join(recent) or 'none'}\n\n"
+            f"Recent thoughts (DO NOT repeat these phrases): {', '.join(recent) or 'none'}\n\n"
             f"{mem_block}"
         )
 
@@ -203,7 +203,7 @@ class FireflyAgent:
             self.status_message = "Dreaming — inference in progress..."
         ctx = self._system_context("dreams existence solitude inner visions")
         user = f"YOUR CURRENT STATE:\n{ctx}\n\nContinue your inner life. Dream, reason, or reflect."
-        action = self._run_inference(DREAM_SYSTEM, user, max_tokens=100)
+        action = self._run_inference(DREAM_SYSTEM, user, max_tokens=160)
         self._apply_display(action)
         self._store_thought_memory(action)
         self.total_thoughts += 1

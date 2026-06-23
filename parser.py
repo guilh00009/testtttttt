@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 from typing import Optional
 
+LINE_MAX = int(__import__("os").environ.get("LINE_MAX", "72"))
+
 # Placeholder text the 1B model copies from bad prompts — treat as empty.
 _PLACEHOLDER_LINES = frozenset({
     "line1", "line2", "line3", "...", "…", "short line 1", "short line 2", "short line 3",
@@ -13,11 +15,34 @@ _PLACEHOLDER_INNER = frozenset({
     "private thought", "thought", "thinking about the visitor's words",
 })
 _PLACEHOLDER_MESSAGE = frozenset({"...", "…", ""})
+_GARBAGE_LINE = re.compile(
+    r"^(\[?(dream|reason|reflect|inner|mood|action|haunted)\]?|inner|mood)$",
+    re.I,
+)
+
+
+def _finish_line(text: str, max_len: int = LINE_MAX) -> str:
+    """Keep full sentences; only trim at word boundary if over limit."""
+    text = re.sub(r"\s+", " ", str(text).strip())
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(".,;:- ")
 
 
 def _is_placeholder_line(text: str) -> bool:
     t = str(text).strip().lower()
-    return not t or t in _PLACEHOLDER_LINES or t.startswith("...")
+    if not t or t in _PLACEHOLDER_LINES or t.startswith("..."):
+        return True
+    if _GARBAGE_LINE.match(t):
+        return True
+    if re.search(r"\[(DREAM|REASON|REFLECT)\]", t, re.I):
+        return True
+    return False
 
 
 def _clean_lines(lines: list) -> list[str]:
@@ -25,7 +50,7 @@ def _clean_lines(lines: list) -> list[str]:
         lines = [lines]
     cleaned = []
     for line in lines[:3]:
-        s = str(line).strip()[:40]
+        s = _finish_line(str(line))
         if not _is_placeholder_line(s):
             cleaned.append(s)
     return cleaned
@@ -39,10 +64,10 @@ def _clean_message(msg: str) -> str:
 
 
 def _clean_inner(inner: str) -> str:
-    s = str(inner or "").strip()
+    s = _finish_line(str(inner or ""), max_len=200)
     if s.lower() in _PLACEHOLDER_INNER:
         return ""
-    return s[:200]
+    return s
 
 
 def extract_json(text: str) -> Optional[dict]:
@@ -96,14 +121,16 @@ def normalize_action(raw: dict) -> dict:
 
     # Chat actions: message is primary; backfill lines from message if needed.
     if message and len(lines) < 3:
-        parts = [p.strip() for p in re.split(r"[.!?|]", message) if p.strip()]
+        parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|[|]", message) if p.strip()]
         for p in parts:
             if len(lines) >= 3:
                 break
-            if not _is_placeholder_line(p):
-                lines.append(p[:40])
+            finished = _finish_line(p)
+            if finished and not _is_placeholder_line(finished):
+                lines.append(finished)
     if not lines and message:
-        lines = [message[:40], message[40:80] or "...", "..."]
+        chunk = _finish_line(message)
+        lines = [chunk] if chunk else []
     while len(lines) < 3:
         lines.append("...")
 
