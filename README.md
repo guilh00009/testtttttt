@@ -8,7 +8,7 @@ sdk_version: 5.23.0
 app_file: app.py
 pinned: false
 license: mit
-short_description: Shared-memory AI consciousness — one entity, one visitor at a time
+short_description: One shared AI mind — dreams alone, one chat at a time
 startup_duration_timeout: 45m
 preload_from_hub:
   - repo_id: mradermacher/Firefly-V3-i1-GGUF
